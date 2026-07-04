@@ -1,4 +1,3 @@
-# main.py
 import json
 import os
 
@@ -11,6 +10,15 @@ from openai import AsyncOpenAI
 from mcp_client import kapruka_session, mcp_tools_to_openai
 from prompts import SYSTEM_PROMPT
 from schemas import ChatRequest
+from typing import Any, cast
+
+from openai.types.chat import ChatCompletionMessageParam
+from typing import Any, cast
+
+from openai.types.chat import (
+    ChatCompletionMessageParam,
+    ChatCompletionToolParam,
+)
 
 load_dotenv()
 
@@ -50,41 +58,63 @@ async def chat(req: ChatRequest):
     async def event_stream():
         try:
             async with kapruka_session() as session:
-                # 1. Ask Kapruka what tools exist, translate for the model
                 tool_defs = mcp_tools_to_openai(await session.list_tools())
 
-                messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-                messages += [m.model_dump() for m in req.messages]
+                # Explicit annotation — fixes the too-narrow inference (Error 1)
+                # and satisfies create()'s signature (Error 2)
+                messages: list[ChatCompletionMessageParam] = [
+                    {"role": "system", "content": SYSTEM_PROMPT}
+                ]
+                for m in req.messages:
+                    if m.role == "user":
+                        messages.append({"role": "user", "content": m.content})
+                    else:
+                        messages.append({"role": "assistant", "content": m.content})
 
-                # 2. THE AGENT LOOP
                 for _ in range(MAX_TURNS):
                     resp = await client.chat.completions.create(
                         model=MODEL,
                         messages=messages,
                         tools=tool_defs,
                         max_tokens=4096,
+                        temperature=0.4,
                     )
                     msg = resp.choices[0].message
 
-                    # 3. Claude wants tools → execute and loop again
                     if msg.tool_calls:
+                        # The one honest cast: model_dump() is dynamic data,
+                        # provably-correct typing is impossible here by nature
                         messages.append(
-                            {
-                                "role": "assistant",
-                                "content": msg.content,
-                                "tool_calls": [
-                                    tc.model_dump() for tc in msg.tool_calls
-                                ],
-                            }
+                            cast(
+                                ChatCompletionMessageParam,
+                                {
+                                    "role": "assistant",
+                                    "content": msg.content,
+                                    "tool_calls": [
+                                        tc.model_dump() for tc in msg.tool_calls
+                                    ],
+                                },
+                            )
                         )
+
                         for tc in msg.tool_calls:
+                            # NARROWING — the real-bug fix (Error 4):
+                            # skip any non-function tool call instead of crashing on it
+                            if tc.type != "function":
+                                continue
+
                             yield sse({"type": "tool", "name": tc.function.name})
 
-                            args = json.loads(tc.function.arguments or "{}")
+                            args: dict[str, Any] = json.loads(
+                                tc.function.arguments or "{}"
+                            )
                             result = await session.call_tool(tc.function.name, args)
                             result_text = "\n".join(
                                 c.text for c in result.content if c.type == "text"
                             )
+                            print(f"\n===== TOOL RESULT: {tc.function.name} =====")
+                            print(result_text[:3000])
+                            print("===== END =====\n")
                             messages.append(
                                 {
                                     "role": "tool",
@@ -92,9 +122,8 @@ async def chat(req: ChatRequest):
                                     "content": result_text[:50_000],
                                 }
                             )
-                        continue  # ← back to step 2: Claude reads results, decides again
+                        continue
 
-                    # 4. No tool calls → this is the final answer
                     yield sse({"type": "text", "text": msg.content or ""})
                     break
 
