@@ -27,6 +27,14 @@ import re
 load_dotenv()
 PRODUCTS_RE = re.compile(r"<products>\s*(.*?)\s*</products>", re.DOTALL)
 
+THOUGHT_RE = re.compile(r"^\s*thought\b.*?(?=\n\n|$)", re.DOTALL | re.IGNORECASE)
+
+
+def strip_leaked_reasoning(text: str) -> str:
+    """Defensive: some gateways merge thinking blocks into content."""
+    cleaned = THOUGHT_RE.sub("", text, count=1).lstrip()
+    return cleaned if cleaned else text  # never return empty — fail open
+
 
 def extract_products(text: str) -> tuple[str, list[dict] | None]:
     """Lift the <products> JSON block out of the model's reply.
@@ -79,7 +87,7 @@ client = AsyncOpenAI(
     base_url=os.environ["AIM_BASE_URL"],  # ← the one line that redirects the SDK
 )
 
-MODEL = "aim/gemini-3.5-flash-low"
+MODEL = "aim/gemini-3-flash"
 MAX_TURNS = 8  # safety cap on loop iterations
 
 
@@ -186,7 +194,9 @@ async def chat(req: ChatRequest):
                             )
                         continue
                     # 4. No tool calls → final answer
-                    clean_text, products = extract_products(msg.content or "")
+                    clean_text, products = extract_products(
+                        strip_leaked_reasoning(msg.content or "")
+                    )
                     if products:
                         yield sse({"type": "products", "items": products})
                     yield sse({"type": "text", "text": clean_text})
