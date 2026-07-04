@@ -1,6 +1,6 @@
 import json
 import os
-
+import asyncio
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -83,6 +83,22 @@ MODEL = "aim/gemini-3.5-flash-low"
 MAX_TURNS = 8  # safety cap on loop iterations
 
 
+async def run_tool(session, tc) -> str:
+    """Execute one tool call; errors become information for the model."""
+    args: dict[str, Any] = json.loads(tc.function.arguments or "{}")
+    try:
+        result = await session.call_tool(tc.function.name, args)
+        text = "\n".join(c.text for c in result.content if c.type == "text")
+    except Exception as exc:
+        print(f"tool error [{tc.function.name}]: {exc!r}")
+        text = (
+            f"TOOL ERROR: {tc.function.name} failed (possibly rate-limited). "
+            "Do not retry immediately. Work with what you have, or tell the "
+            "customer to try again shortly — in their language."
+        )
+    return text[:50_000]
+
+
 def sse(payload: dict) -> str:
     return f"data: {json.dumps(payload)}\n\n"
 
@@ -147,29 +163,25 @@ async def chat(req: ChatRequest):
                             )
                         )
 
-                        for tc in msg.tool_calls:
-                            # NARROWING — the real-bug fix (Error 4):
-                            # skip any non-function tool call instead of crashing on it
-                            if tc.type != "function":
-                                continue
+                        function_calls = [
+                            tc for tc in msg.tool_calls if tc.type == "function"
+                        ]
 
+                        # announce all tools at once — the UI shows the plan
+                        for tc in function_calls:
                             yield sse({"type": "tool", "name": tc.function.name})
 
-                            args: dict[str, Any] = json.loads(
-                                tc.function.arguments or "{}"
-                            )
-                            result = await session.call_tool(tc.function.name, args)
-                            result_text = "\n".join(
-                                c.text for c in result.content if c.type == "text"
-                            )
-                            print(f"\n===== TOOL RESULT: {tc.function.name} =====")
-                            print(result_text[:3000])
-                            print("===== END =====\n")
+                        # execute them CONCURRENTLY
+                        results = await asyncio.gather(
+                            *(run_tool(session, tc) for tc in function_calls)
+                        )
+
+                        for tc, result_text in zip(function_calls, results):
                             messages.append(
                                 {
                                     "role": "tool",
                                     "tool_call_id": tc.id,
-                                    "content": result_text[:50_000],
+                                    "content": result_text,
                                 }
                             )
                         continue

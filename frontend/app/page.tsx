@@ -27,8 +27,16 @@ const SUGGESTIONS = [
   "Anniversary gift ekak hoyala denna",
 ];
 
+const WELCOME: Msg = {
+  role: "assistant",
+  content:
+    "Ayubowan! 👋 I'm **Kiri** — your Kapruka shopping buddy. " +
+    "ඔයාට ඕන තෑග්ග මම හොයලා දෙන්නම් — English, සිංහල, தமிழ், Singlish, Tanglish… ඕන භාෂාවකින් කතා කරන්න! " +
+    "Who are we shopping for today? 🎁",
+};
+
 export default function Home() {
-  const [messages, setMessages] = useState<Msg[]>([]);
+  const [messages, setMessages] = useState<Msg[]>([WELCOME]);
   const [input, setInput] = useState("");
   const [status, setStatus] = useState<"idle" | "thinking" | string>("idle");
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -145,7 +153,7 @@ export default function Home() {
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-6">
         <div className="mx-auto flex max-w-3xl flex-col gap-4">
-          {messages.length === 0 && (
+          {!messages.some((m) => m.role === "user") && (
             <div className="mt-16 text-center duration-500 animate-in fade-in slide-in-from-bottom-4">
               <p className="text-3xl">🎁</p>
               <h2 className="mt-3 text-xl font-semibold text-emerald-900">
