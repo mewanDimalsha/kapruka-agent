@@ -6,7 +6,18 @@ import remarkGfm from "remark-gfm";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
-type Msg = { role: "user" | "assistant"; content: string };
+type Product = {
+  id: string;
+  name: string;
+  price: string;
+  image?: string;
+  url: string;
+};
+type Msg = {
+  role: "user" | "assistant";
+  content: string;
+  products?: Product[];
+};
 
 const SUGGESTIONS = [
   "🎂 Birthday gift under Rs 5000",
@@ -46,6 +57,7 @@ export default function Home() {
       const decoder = new TextDecoder();
       let buffer = "";
       let assistantText = "";
+      let assistantProducts: Product[] | undefined;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -63,11 +75,25 @@ export default function Home() {
           const event = JSON.parse(payload);
           if (event.type === "tool") {
             setStatus(friendlyToolName(event.name));
+          } else if (event.type === "products") {
+            assistantProducts = event.items;
+            setMessages([
+              ...history,
+              {
+                role: "assistant",
+                content: assistantText,
+                products: assistantProducts,
+              },
+            ]);
           } else if (event.type === "text") {
             assistantText += event.text;
             setMessages([
               ...history,
-              { role: "assistant", content: assistantText },
+              {
+                role: "assistant",
+                content: assistantText,
+                products: assistantProducts,
+              },
             ]);
           } else if (event.type === "error") {
             setMessages([
@@ -158,9 +184,48 @@ export default function Home() {
                 {m.role === "user" ? (
                   m.content
                 ) : (
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {m.content}
-                  </ReactMarkdown>
+                  <>
+                    {m.products && m.products.length > 0 && (
+                      <div className="-mx-1 mb-3 flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2">
+                        {m.products.map((p) => (
+                          <a
+                            key={p.id}
+                            href={p.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="w-44 flex-shrink-0 snap-start overflow-hidden rounded-xl border border-emerald-100 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                          >
+                            {p.image ? (
+                              <img
+                                src={p.image}
+                                alt={p.name}
+                                className="h-36 w-full object-cover"
+                                loading="lazy"
+                              />
+                            ) : (
+                              <div className="flex h-36 w-full items-center justify-center bg-emerald-50 text-3xl">
+                                🎁
+                              </div>
+                            )}
+                            <div className="p-3">
+                              <p className="line-clamp-2 text-xs font-medium text-gray-800">
+                                {p.name}
+                              </p>
+                              <p className="mt-1 text-sm font-bold text-emerald-700">
+                                {p.price}
+                              </p>
+                              <span className="mt-2 inline-block rounded-full bg-emerald-600 px-3 py-1 text-[11px] font-semibold text-white">
+                                View →
+                              </span>
+                            </div>
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {m.content}
+                    </ReactMarkdown>
+                  </>
                 )}
               </div>
             </div>

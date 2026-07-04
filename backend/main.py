@@ -19,8 +19,29 @@ from openai.types.chat import (
     ChatCompletionMessageParam,
     ChatCompletionToolParam,
 )
+import re
 
 load_dotenv()
+PRODUCTS_RE = re.compile(r"<products>\s*(.*?)\s*</products>", re.DOTALL)
+
+
+def extract_products(text: str) -> tuple[str, list[dict] | None]:
+    """Lift the <products> JSON block out of the model's reply.
+    Returns (clean_text, products or None). Fails safe: on any parse
+    problem the block is still stripped so raw JSON never reaches the UI."""
+    match = PRODUCTS_RE.search(text)
+    if not match:
+        return text, None
+    clean = PRODUCTS_RE.sub("", text).strip()
+    try:
+        products = json.loads(match.group(1))
+        if not isinstance(products, list):
+            return clean, None
+        return clean, products[:6]
+    except json.JSONDecodeError:
+        print("products block parse failed — stripped, no cards")
+        return clean, None
+
 
 for var in ("AIM_API_KEY", "AIM_BASE_URL"):
     if not os.environ.get(var):
@@ -30,6 +51,8 @@ app = FastAPI(title="Kapruka Agent API")
 
 DEFAULT_ORIGINS = [
     "https://kapruka-agent-sigma.vercel.app",
+    "http://localhost:3000",
+    "http://localhost:3001",
 ]
 
 
@@ -53,7 +76,7 @@ client = AsyncOpenAI(
     base_url=os.environ["AIM_BASE_URL"],  # ← the one line that redirects the SDK
 )
 
-MODEL = "aim/claude-sonnet-4-6"
+MODEL = "aim/gemini-3.5-flash-low"
 MAX_TURNS = 8  # safety cap on loop iterations
 
 
@@ -141,11 +164,12 @@ async def chat(req: ChatRequest):
                                 }
                             )
                         continue
-
-                    yield sse({"type": "text", "text": msg.content or ""})
+                    # 4. No tool calls → final answer
+                    clean_text, products = extract_products(msg.content or "")
+                    if products:
+                        yield sse({"type": "products", "items": products})
+                    yield sse({"type": "text", "text": clean_text})
                     break
-
-            yield "data: [DONE]\n\n"
 
         except Exception as exc:
             print(f"stream error: {exc!r}")
