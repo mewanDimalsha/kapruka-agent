@@ -28,13 +28,23 @@ for var in ("AIM_API_KEY", "AIM_BASE_URL"):
 
 app = FastAPI(title="Kapruka Agent API")
 
+DEFAULT_ORIGINS = [
+    "https://kapruka-agent-sigma.vercel.app",
+]
+
+
+def allowed_origins() -> list[str]:
+    extra = os.environ.get("ALLOWED_ORIGINS", "")
+    origins = list(DEFAULT_ORIGINS)
+    if extra:
+        origins.extend(origin.strip() for origin in extra.split(",") if origin.strip())
+    return origins
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://kapruka-agent-sigma.vercel.app",
-        "http://localhost:3000",
-    ],
-    allow_methods=["POST"],
+    allow_origins=allowed_origins(),
+    allow_methods=["POST", "OPTIONS"],
     allow_headers=["Content-Type"],
 )
 
