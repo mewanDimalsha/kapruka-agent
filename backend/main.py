@@ -1,6 +1,9 @@
 import json
 import os
 
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -103,8 +106,14 @@ async def chat(req: ChatRequest):
 
                 # Explicit annotation — fixes the too-narrow inference (Error 1)
                 # and satisfies create()'s signature (Error 2)
+                today = datetime.now(ZoneInfo("Asia/Colombo")).strftime("%A, %Y-%m-%d")
                 messages: list[ChatCompletionMessageParam] = [
-                    {"role": "system", "content": SYSTEM_PROMPT}
+                    {
+                        "role": "system",
+                        "content": SYSTEM_PROMPT
+                        + f"\n\n# TODAY\nToday is {today} (Sri Lanka time). "
+                        "Resolve relative dates like 'heta / tomorrow / naalaikku / අද / හෙට' from this date.",
+                    }
                 ]
                 for m in req.messages:
                     if m.role == "user":

@@ -17,6 +17,7 @@ type Msg = {
   role: "user" | "assistant";
   content: string;
   products?: Product[];
+  retryText?: string;
 };
 
 const SUGGESTIONS = [
@@ -114,6 +115,7 @@ export default function Home() {
           role: "assistant",
           content:
             "I couldn't reach the server 🙏 Check that the backend is running and try again.",
+          retryText: content,
         },
       ]);
     } finally {
@@ -196,12 +198,7 @@ export default function Home() {
                             className="w-44 flex-shrink-0 snap-start overflow-hidden rounded-xl border border-emerald-100 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
                           >
                             {p.image ? (
-                              <img
-                                src={p.image}
-                                alt={p.name}
-                                className="h-36 w-full object-cover"
-                                loading="lazy"
-                              />
+                              <ProductImage src={p.image} name={p.name} />
                             ) : (
                               <div className="flex h-36 w-full items-center justify-center bg-emerald-50 text-3xl">
                                 🎁
@@ -225,6 +222,14 @@ export default function Home() {
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>
                       {m.content}
                     </ReactMarkdown>
+                    {m.retryText && (
+                      <button
+                        onClick={() => send(m.retryText!)}
+                        className="mt-2 rounded-full border border-emerald-300 bg-emerald-50 px-4 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100"
+                      >
+                        🔄 Try again
+                      </button>
+                    )}
                   </>
                 )}
               </div>
@@ -246,12 +251,25 @@ export default function Home() {
       {/* Input */}
       <div className="border-t border-emerald-100 bg-white/70 px-4 py-4 backdrop-blur">
         <div className="mx-auto flex max-w-3xl gap-2">
-          <input
+          <textarea
+            autoFocus
             value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && send(input)}
-            placeholder="Type in English, සිංහල, தமிழ், Singlish…"
-            className="flex-1 rounded-full border border-emerald-200 bg-white px-5 py-3 text-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+            onChange={(e) => {
+              setInput(e.target.value);
+              e.target.style.height = "auto";
+              e.target.style.height =
+                Math.min(e.target.scrollHeight, 120) + "px";
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                send(input);
+              }
+            }}
+            rows={1}
+            placeholder="Type in English, සිංහල, தமிழ், Singlish, Tanglish..."
+            disabled={status !== "idle"}
+            className="flex-1 resize-none rounded-3xl border border-emerald-200 bg-white px-5 py-3 text-sm text-gray-900 placeholder:text-gray-400 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
           />
           <button
             onClick={() => send(input)}
@@ -277,4 +295,33 @@ function friendlyToolName(name: string): string {
     kapruka_track_order: "📦 Tracking your order…",
   };
   return map[name] ?? "Working on it…";
+}
+
+const cdn = (url: string) =>
+  url.includes("static2.kapruka.com")
+    ? url
+    : `https://static2.kapruka.com/product-image/width=330,quality=93,f=auto/${url
+        .replace(/^https?:\/\/(www\.)?kapruka\.com\//, "")
+        .replace(/^https?:\/\//, "")}`;
+
+function ProductImage({ src, name }: { src?: string; name: string }) {
+  const [failed, setFailed] = useState(false);
+
+  if (!src || failed) {
+    return (
+      <div className="flex h-36 w-full items-center justify-center bg-emerald-50 text-3xl">
+        🎁
+      </div>
+    );
+  }
+  return (
+    <img
+      src={cdn(src)}
+      alt={name}
+      className="h-36 w-full object-cover"
+      loading="lazy"
+      referrerPolicy="no-referrer"
+      onError={() => setFailed(true)}
+    />
+  );
 }
