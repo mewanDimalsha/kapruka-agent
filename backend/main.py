@@ -31,8 +31,8 @@ app = FastAPI(title="Kapruka Agent API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
+        "https://kapruka-agent-sigma.vercel.app",
         "http://localhost:3000",
-        "https://kapruka-agent-sigma.vercel.app/",
     ],
     allow_methods=["POST"],
     allow_headers=["Content-Type"],
