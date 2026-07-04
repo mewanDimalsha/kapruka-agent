@@ -31,7 +31,8 @@ app = FastAPI(title="Kapruka Agent API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://kapruka-agent-iub0coodc-mewans-projects-83c53b87.vercel.app/"
+        "http://localhost:3000",
+        "https://kapruka-agent-sigma.vercel.app/",
     ],
     allow_methods=["POST"],
     allow_headers=["Content-Type"],
@@ -48,6 +49,11 @@ MAX_TURNS = 8  # safety cap on loop iterations
 
 def sse(payload: dict) -> str:
     return f"data: {json.dumps(payload)}\n\n"
+
+
+@app.get("/")
+async def root():
+    return {"service": "Kiri — Kapruka shopping agent API", "health": "/health"}
 
 
 @app.get("/health")
